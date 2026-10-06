@@ -42,8 +42,7 @@ def similarity_score(resume, jd):
     a, b = _embed_long(resume), _embed_long(jd)
     return round(float(util.cos_sim(a, b)) * 100, 1)
 
-
-def get_feedback(resume, jd):
+def get_feedback(resume, jd, retries=2):
     prompt = f"""You are an expert recruiter. Compare the resume to the job description.
 Return ONLY valid JSON with these keys:
 - "matched_skills": list of skills the resume has that the job wants
@@ -56,21 +55,52 @@ RESUME:
 
 JOB DESCRIPTION:
 {jd[:4000]}"""
-    resp = client.chat.completions.create(
-        model="openai/gpt-oss-120b",
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-        temperature=0.2,
-        max_tokens=2000,
-        reasoning_effort="low",
-    )
-    return json.loads(resp.choices[0].message.content)
+    last_err = None
+    for _ in range(retries):
+        try:
+            resp = client.chat.completions.create(
+                model="openai/gpt-oss-120b",
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=0.2,
+                max_tokens=2000,
+                reasoning_effort="low",
+            )
+            data = json.loads(resp.choices[0].message.content)
+            for key in ("matched_skills", "missing_skills", "suggestions"):
+                data.setdefault(key, [])
+            data.setdefault("summary", "")
+            return data
+        except json.JSONDecodeError as e:
+            last_err = e
+    raise ValueError("The AI returned an invalid response. Please try again.") from last_err
+
+
+def normalize_similarity(raw, low=30, high=75):
+    # raw cosine scores for resume-vs-JD text usually fall between ~30 and ~75
+    return max(0.0, min(100.0, (raw - low) / (high - low) * 100))
+
+
+def combined_score(raw_sim, feedback):
+    matched = len(feedback["matched_skills"])
+    missing = len(feedback["missing_skills"])
+    total = matched + missing
+    coverage = matched / total * 100 if total else 0.0
+    sim_norm = normalize_similarity(raw_sim)
+    final = 0.6 * coverage + 0.4 * sim_norm
+    return {
+        "final": round(final, 1),
+        "skill_coverage": round(coverage, 1),
+        "semantic_similarity": round(sim_norm, 1),
+    }
 
 
 if __name__ == "__main__":
     resume = extract_text("sample_resume.pdf")
     jd = open("sample_jd.txt", encoding="utf-8").read()
 
+    sim = similarity_score(resume, jd)
+    feedback = get_feedback(resume, jd)
     print("Predicted categories:", predict_category(resume))
-    print("Similarity score:", similarity_score(resume, jd))
-    print(json.dumps(get_feedback(resume, jd), indent=2))
+    print("Raw similarity:", sim)
+    print("Scores:", combined_score(sim, feedback))
