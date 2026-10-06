@@ -2,3 +2,5 @@ venv/
 .env
 __pycache__/
 data/
+sample_resume.pdf
+sample_jd.txt
