@@ -2,7 +2,7 @@
 
 Upload a resume (PDF) and paste a job description. The app returns a match score, matched and missing skills, improvement suggestions, and the job categories the resume most resembles.
 
-**🔗 Live demo:** coming soon
+**🔗 Live demo:** https://resumematcher-rm.streamlit.app/
 
 ![Demo](screenshots/demo.png)
 
